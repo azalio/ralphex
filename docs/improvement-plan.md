@@ -26,3 +26,22 @@ Active recommendations grounded in the current repository state.
 - Add a failure-onset heuristic that walks the trace backwards from the terminal error and marks the earliest failed command, unchanged review round, invalid plan parse, or validation failure that caused the run to stop.
 - Surface the trace tree and failure-onset node through the web dashboard API without requiring users to parse raw progress logs.
 - Add unit tests around trace event ordering and a fixture test for a synthetic validation failure followed by a review-loop abort.
+
+## Acceptance-criteria IDs for plan execution coverage
+
+**Source**: [[acai-sh]] (article note)
+**Implementation Layer**: `pkg/plan`, `pkg/processor`, `pkg/progress`, `pkg/status`, `pkg/web`, and validation-command handling
+**Missing Capability**: Stable acceptance-criteria identifiers that connect Markdown plan requirements to executor prompts, validation commands, review findings, commits, and dashboard status.
+**Architecture Evidence**: `docs/architecture.md` defines Markdown plan files, task checkbox state, validation commands, automatic commits, multi-phase review loops, progress logs, and dashboard/SSE status as the runtime source of truth.
+**Benefit Hypothesis**: If each executable plan task can declare durable acceptance IDs and ralphex records which IDs were implemented, validated, reviewed, and committed, autonomous plan runs will produce auditable acceptance coverage instead of only "task done" checkboxes. Pass criteria: a fixture plan with missing or failing acceptance IDs blocks completion, while a passing run shows per-ID coverage in progress JSONL and the dashboard.
+**Confidence**: 0.70
+**Reasoning**: ralphex owns the layer that turns plans into autonomous coding-agent execution. The architecture already emphasizes autonomy with auditability, fresh execution contexts, validation commands, progress logs, commits, and review loops, but those surfaces are task/phase oriented rather than requirement oriented. The ACAI idea is useful here because it gives the processor a stable join key between the plan, validation output, review output, and final commit evidence.
+**Why Not Already Tried**: Current plan parsing is centered on `### Task N` sections and checkbox manipulation. The architecture does not define an acceptance-ID schema, coverage model, validation-command mapping, or dashboard view that proves a specific requirement was satisfied before a task is marked complete.
+
+### Proposed Changes
+
+- Extend the plan parser to recognize optional acceptance IDs under each task, for example `AC-001`, `AC-002`, or `TASK-1.1`, while preserving existing Markdown checkbox behavior for older plans.
+- Thread acceptance IDs into executor prompts, validation-command summaries, review prompts, and progress logs so each phase can cite the requirement it is satisfying or challenging.
+- Add a coverage accumulator in `pkg/processor` that records, per acceptance ID, implementation status, validation command evidence, review verdict, and commit hash.
+- Surface acceptance coverage in the web dashboard and status APIs alongside task/phase state, including a clear blocked state for IDs with missing validation or unresolved review findings.
+- Add fixture tests for plan parsing, validation-output attribution, and a synthetic run where one acceptance ID remains uncovered and prevents task completion.
