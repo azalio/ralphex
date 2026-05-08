@@ -45,3 +45,22 @@ Active recommendations grounded in the current repository state.
 - Add a coverage accumulator in `pkg/processor` that records, per acceptance ID, implementation status, validation command evidence, review verdict, and commit hash.
 - Surface acceptance coverage in the web dashboard and status APIs alongside task/phase state, including a clear blocked state for IDs with missing validation or unresolved review findings.
 - Add fixture tests for plan parsing, validation-output attribution, and a synthetic run where one acceptance ID remains uncovered and prevents task completion.
+
+## Ordered execution reliability taxonomy for autonomous plan phases [2605.213]
+
+**Source**: [[2605.211]], [[2605.213]], [[2605.214]], [[2605.215]] (ideas from vault)
+**Implementation Layer**: `pkg/processor`, `pkg/executor`, `pkg/progress`, `pkg/status`, `pkg/web`, and plan validation handling
+**Missing Capability**: A procedure-specific error taxonomy and latency/correctness metrics for ordered task, validation, commit, review, external-review, and finalize phases.
+**Architecture Evidence**: `docs/architecture.md` defines full plan execution as an ordered flow from plan selection through task executor, validation commands, commits, review loops, and optional finalize behavior; `Core Structure` assigns phase transitions to `pkg/processor`, executor calls to `pkg/executor`, and phase/status output to `pkg/progress`, `pkg/status`, and `pkg/web`.
+**Benefit Hypothesis**: Classifying each autonomous run failure by ordered-execution error type will make stalled runs easier to debug and reduce repeated phase-loop failures. Pass criteria: fixture runs can distinguish wrong phase order, skipped validation, repeated review stalemate, executor timeout, commit failure, and plan-parse mismatch, while dashboard/status output reports per-phase latency and terminal taxonomy code.
+**Confidence**: 0.69
+**Reasoning**: The telecom procedure paper is not directly about coding agents, but its core mechanism is a strict sequence of dependent tool calls with reliability degradation as sequence length grows. That maps closely to ralphex's local orchestration layer: it owns the ordered run procedure, invokes external executors, runs validation, commits progress, and then enters review loops. The repo already plans trace trees and acceptance coverage, but it does not yet define stable failure classes or measure where long ordered procedures degrade.
+**Why Not Already Tried**: Current plan items reconstruct traces and connect acceptance criteria to evidence. They do not classify procedure failures by sequence violation type, nor do they quantify latency as executor reasoning time plus validation/review/tool execution time per phase.
+
+### Proposed Changes
+
+- Define stable `ExecutionErrorKind` values such as `plan_parse_mismatch`, `phase_order_violation`, `executor_timeout`, `validation_skipped`, `validation_failed`, `commit_failed`, `review_stalemate`, `external_review_failed`, and `finalize_failed`.
+- Record per-phase start/end timestamps and executor/validation command counts in the same progress/status surfaces used by the dashboard.
+- Add an ordered-procedure checker in `pkg/processor` tests that asserts the expected phase sequence for full, tasks-only, review-only, external-only, and finalize-enabled runs.
+- Surface the final taxonomy code and phase-latency breakdown in progress JSONL and `/api/sessions` so users can see whether a run failed because the plan was wrong, the executor stalled, validation failed, or the review loop stopped making progress.
+- Add stress fixtures with increasing task/review step counts to detect reliability degradation limits before raising default iteration or review-patience settings.
