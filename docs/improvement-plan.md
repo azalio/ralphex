@@ -8,6 +8,25 @@ Active recommendations grounded in the current repository state.
 - `go test -race -timeout=100s ./...`
 - `python3 scripts/ralphex-dk.sh --test`
 
+## Clean-restart retry policy for failed executor sessions
+
+**Source**: [[why-retrying-fails-context-contamination-in-llm-agent-pipelines]] (paper note)
+**Implementation Layer**: `pkg/processor`, `pkg/executor`, `pkg/progress`, `pkg/status`, and prompt/context construction for task and review phases
+**Missing Capability**: A first-class retry-attempt policy that separates clean retries from contaminated follow-up context after failed task, review, external-review, timeout, and rate-limit sessions.
+**Architecture Evidence**: `docs/architecture.md` defines "Fresh execution context" as a quality goal, assigns retry limits and phase transitions to `pkg/processor`, wraps agent calls behind `pkg/executor`, and records execution state through progress logs/status files. README also says each task runs in a fresh session, while review loops can carry `{{PREVIOUS_REVIEW_CONTEXT}}` and rate-limit/session-timeout retry paths are configurable.
+**Benefit Hypothesis**: When retries after executor failure rebuild a clean prompt from plan/git/progress state and quarantine failed-session output unless a policy explicitly marks it safe, repeated attempts should stop reinforcing the same bad context. Pass criteria: fixture runs that fail once via timeout, rate limit, malformed signal, and review stalemate retry with a fresh attempt id, no untrusted partial transcript in the next prompt, and progress/status output showing why context was carried or discarded.
+**Confidence**: 0.67
+**Reasoning**: The source paper's clean-restart result maps directly to ralphex's core product claim: long autonomous runs stay reliable because each agent session starts fresh. The current architecture already owns the orchestration and progress surfaces needed to enforce that claim, but retries are spread across task execution, Claude review, external review, plan creation, rate-limit waits, session timeouts, and manual breaks. Some paths intentionally preserve prior review context, while timeout handling already treats partial output as untrusted. Turning that implicit behavior into an explicit retry policy gives the project a measurable invariant rather than a best-effort prompt convention.
+**Why Not Already Tried**: Existing plan items add trace trees, acceptance coverage, and error taxonomy, but none define a retry-attempt context contract. The code and docs mention `TaskRetryCount`, `--wait`, `--session-timeout`, `--idle-timeout`, review patience, and `{{PREVIOUS_REVIEW_CONTEXT}}`; they do not describe a normalized attempt record, clean/contaminated context classification, or tests proving failed-session output cannot leak into the next retry.
+
+### Proposed Changes
+
+- Define a `RetryAttempt` record emitted for every executor call with phase, attempt number, trigger (`rate_limit`, `session_timeout`, `idle_timeout`, `failed_signal`, `review_stalemate`, `manual_break`, `executor_error`), prompt fingerprint, carried-context policy, and terminal status.
+- Centralize retry context construction in `pkg/processor`: clean retries rebuild from plan file, git diff/status, committed progress, and explicit validation results; failed-session stdout/stderr is excluded by default and can only be carried as summarized diagnostic text when the trigger is marked safe.
+- Make the review-loop `{{PREVIOUS_REVIEW_CONTEXT}}` path policy-aware: carry resolved findings and accepted reviewer deltas, but quarantine partial timeout output and repeated unchanged findings that review-patience already classifies as stalemate.
+- Surface retry hygiene in progress JSON/status/dashboard APIs so users can see "attempt 2 restarted clean after timeout" versus "attempt 2 reused prior accepted review context"; pair this with the hierarchical trace-tree plan item.
+- Add table-driven tests for task retry, rate-limit retry, session timeout, idle timeout, external review retry, and manual break/resume, asserting the next prompt has a fresh attempt id and contains only policy-approved context.
+
 ## Hierarchical trace trees for failed autonomous runs
 
 **Source**: [[codetracer-towards-traceable-agent-states]] (paper note)
