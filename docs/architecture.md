@@ -123,7 +123,9 @@ No dedicated ADR files were found. Architectural decisions are documented in `RE
 
 ## Freshness
 
-**Generated:** 2026-04-30
+**Last refreshed:** 2026-05-15
+
+**Refresh reason:** Daily maintenance refresh. Since the previous architecture generation, committed repository changes are synthesis-plan updates only; no committed runtime source change altered the processor, executor, progress, status, web, or notification boundaries.
 
 **Evidence Files Used:**
 - `README.md`
@@ -133,4 +135,4 @@ No dedicated ADR files were found. Architectural decisions are documented in `RE
 - `.github/workflows/*`
 - `docs/{custom-providers,hg-support,notifications,bedrock-setup}.md`
 - `scripts/*/README.md`
-- `git log --max-count=30`
+- `git log --since=2026-04-30`
