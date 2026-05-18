@@ -83,3 +83,22 @@ Active recommendations grounded in the current repository state.
 - Add an ordered-procedure checker in `pkg/processor` tests that asserts the expected phase sequence for full, tasks-only, review-only, external-only, and finalize-enabled runs.
 - Surface the final taxonomy code and phase-latency breakdown in progress JSONL and `/api/sessions` so users can see whether a run failed because the plan was wrong, the executor stalled, validation failed, or the review loop stopped making progress.
 - Add stress fixtures with increasing task/review step counts to detect reliability degradation limits before raising default iteration or review-patience settings.
+
+## Phase precondition registry for state-constrained execution [2605.216]
+
+**Source**: [[SDOF: Taming the Alignment Tax in Multi-Agent Orchestration with State-Constrained Dispatch]] (paper note)
+**Implementation Layer**: `pkg/processor`, `pkg/plan`, `pkg/git`, `pkg/progress`, `pkg/status`, `pkg/web`, and validation-command handling
+**Missing Capability**: A first-class phase legality and precondition registry that proves each ordered phase is allowed before ralphex enters it, instead of only classifying failures after an illegal or under-prepared phase already ran.
+**Architecture Evidence**: `docs/architecture.md` defines full plan execution as a strict ordered flow: plan selection, git state validation, task executor, validation commands, commits, review loops, optional finalize, and completed-plan movement. It also assigns phase transitions to `pkg/processor`, git/worktree checks to `pkg/git`, progress/status output to `pkg/progress` and `pkg/status`, and dashboard visibility to `pkg/web`.
+**Benefit Hypothesis**: If every task, validation, commit, review, external-review, finalize, and completed-plan move passes explicit preconditions before execution, ralphex will block invalid autonomous transitions earlier and produce clearer recovery guidance. Pass criteria: fixture runs prove skipped validation, dirty git state, missing plan task, unresolved acceptance coverage, stale worktree, review-patience stalemate, and finalize-before-clean-review are blocked with stable precondition codes and audit events before the next phase starts.
+**Confidence**: 0.74
+**Reasoning**: The existing taxonomy item will make failures easier to name, but state-constrained dispatch prevents a class of failures from happening in the first place. SDOF's explicit FSM plus skill-level preconditions maps cleanly to ralphex because the product is already a local workflow controller with visible ordered phases and external executor calls. This is project-owned and testable without changing the LLM executor contract.
+**Why Not Already Tried**: Current plan items cover retry hygiene, trace trees, acceptance coverage, and ordered execution error taxonomy. They do not define a reusable phase-precondition registry, a pre-execution verdict schema, or dashboard/status output that says "phase blocked because the preconditions for commit/review/finalize were not satisfied."
+
+### Proposed Changes
+
+- Define `PhasePrecondition` and `PhasePreconditionVerdict` types with phase, check id, required state, observed evidence, blocking/severity status, and recovery hint.
+- Add a phase registry for `select_plan`, `prepare_git`, `execute_task`, `run_validation`, `commit_task`, `review_first`, `review_external`, `review_second`, `finalize`, and `move_completed_plan`.
+- Run precondition checks at each `pkg/processor` transition and block the next phase when required state is missing, while preserving explicit override paths for documented interactive modes.
+- Emit verdicts into progress JSONL, status APIs, and dashboard session payloads so users can distinguish "phase failed after starting" from "phase was blocked before unsafe execution."
+- Extend tests for full, tasks-only, review-only, external-only, worktree, and finalize-enabled flows to assert both valid phase order and blocked illegal transitions.
